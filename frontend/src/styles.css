@@ -1,0 +1,228 @@
+@import "tailwindcss" source(none);
+@source "../src";
+@import "tw-animate-css";
+
+@custom-variant dark (&:is(.dark *));
+
+@theme inline {
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-ring-offset-background: var(--background);
+
+  --color-gold: var(--gold);
+  --color-gold-soft: var(--gold-soft);
+  --color-burgundy: var(--burgundy);
+  --color-burgundy-deep: var(--burgundy-deep);
+  --color-ivory: var(--ivory);
+  --color-ink: var(--ink);
+
+  --font-display: "Cormorant Garamond", "Playfair Display", serif;
+  --font-body: "EB Garamond", "Lora", Georgia, serif;
+}
+
+:root {
+  --radius: 0.25rem;
+
+  /* Royal palette */
+  --ink: oklch(0.13 0.005 60);            /* #0D0D0D */
+  --gold: oklch(0.78 0.13 85);            /* #D4AF37 */
+  --gold-soft: oklch(0.72 0.12 82);       /* #C9A227 */
+  --burgundy: oklch(0.32 0.14 15);        /* #5C0A1F */
+  --burgundy-deep: oklch(0.22 0.11 15);
+  --ivory: oklch(0.95 0.02 85);           /* #F5EFE0 */
+
+  --background: var(--ink);
+  --foreground: var(--ivory);
+  --card: oklch(0.17 0.008 60);
+  --card-foreground: var(--ivory);
+  --popover: oklch(0.15 0.006 60);
+  --popover-foreground: var(--ivory);
+  --primary: var(--gold);
+  --primary-foreground: oklch(0.13 0.005 60);
+  --secondary: var(--burgundy);
+  --secondary-foreground: var(--ivory);
+  --muted: oklch(0.2 0.01 60);
+  --muted-foreground: oklch(0.72 0.02 80);
+  --accent: var(--burgundy);
+  --accent-foreground: var(--ivory);
+  --destructive: oklch(0.55 0.22 27);
+  --destructive-foreground: var(--ivory);
+  --border: oklch(0.35 0.05 80 / 40%);
+  --input: oklch(0.3 0.02 80 / 40%);
+  --ring: var(--gold);
+}
+
+.dark {
+  --background: var(--ink);
+  --foreground: var(--ivory);
+}
+
+@layer base {
+  * {
+    border-color: var(--color-border);
+  }
+
+  html {
+    scroll-behavior: smooth;
+  }
+
+  body {
+    background-color: var(--color-background);
+    color: var(--color-foreground);
+    font-family: var(--font-body);
+    background-image:
+      radial-gradient(1200px 600px at 10% -10%, oklch(0.22 0.09 15 / 0.35), transparent 60%),
+      radial-gradient(900px 500px at 100% 0%, oklch(0.35 0.12 80 / 0.12), transparent 55%),
+      url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='160' height='160'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 0.83  0 0 0 0 0.68  0 0 0 0 0.24  0 0 0 0.04 0'/></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>");
+    background-attachment: fixed;
+  }
+
+  h1, h2, h3, h4, h5, h6 {
+    font-family: var(--font-display);
+    letter-spacing: 0.01em;
+  }
+}
+
+/* Utilities */
+@utility text-gold {
+  color: var(--gold);
+}
+@utility bg-ink {
+  background-color: var(--ink);
+}
+@utility bg-burgundy {
+  background-color: var(--burgundy);
+}
+@utility text-ivory {
+  color: var(--ivory);
+}
+
+@utility gold-border {
+  border: 1px solid color-mix(in oklab, var(--gold) 65%, transparent);
+}
+
+@utility gold-hairline {
+  border: 1px solid color-mix(in oklab, var(--gold) 40%, transparent);
+}
+
+@utility btn-royal {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  padding: 0.75rem 1.6rem;
+  font-family: var(--font-display);
+  font-weight: 500;
+  font-size: 0.95rem;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  background: linear-gradient(180deg, var(--gold), var(--gold-soft));
+  color: var(--ink);
+  border: 1px solid color-mix(in oklab, var(--gold) 80%, black);
+  border-radius: 2px;
+  transition: all 300ms ease;
+  box-shadow: 0 0 0 1px oklch(0.13 0.005 60), 0 8px 24px -12px oklch(0.78 0.13 85 / 0.5);
+  cursor: pointer;
+}
+@utility btn-royal-hover {
+  &:hover {
+    box-shadow: 0 0 0 1px oklch(0.13 0.005 60), 0 0 30px oklch(0.78 0.13 85 / 0.55);
+    transform: translateY(-1px);
+  }
+}
+
+@utility btn-royal-outline {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  padding: 0.7rem 1.55rem;
+  font-family: var(--font-display);
+  font-weight: 500;
+  font-size: 0.95rem;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--gold);
+  background: transparent;
+  border: 1px solid color-mix(in oklab, var(--gold) 70%, transparent);
+  border-radius: 2px;
+  transition: all 300ms ease;
+  cursor: pointer;
+  &:hover {
+    background: color-mix(in oklab, var(--gold) 12%, transparent);
+    box-shadow: 0 0 24px oklch(0.78 0.13 85 / 0.35);
+  }
+}
+
+@utility royal-card {
+  background: linear-gradient(180deg, oklch(0.17 0.008 60), oklch(0.14 0.008 60));
+  border: 1px solid color-mix(in oklab, var(--gold) 25%, transparent);
+  border-radius: 3px;
+  position: relative;
+}
+
+@utility filigree-divider {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 1rem;
+  color: color-mix(in oklab, var(--gold) 80%, transparent);
+  &::before, &::after {
+    content: "";
+    flex: 1;
+    height: 1px;
+    background: linear-gradient(90deg, transparent, color-mix(in oklab, var(--gold) 60%, transparent), transparent);
+    max-width: 180px;
+  }
+}
+
+@utility eyebrow {
+  font-family: var(--font-display);
+  font-style: italic;
+  letter-spacing: 0.4em;
+  text-transform: uppercase;
+  font-size: 0.7rem;
+  color: color-mix(in oklab, var(--gold) 90%, transparent);
+}
+
+@keyframes royal-fade-up {
+  from { opacity: 0; transform: translateY(24px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@keyframes royal-fade {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@keyframes gold-shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+
+@utility animate-royal-in {
+  animation: royal-fade-up 900ms ease-out both;
+}
+@utility animate-royal-fade {
+  animation: royal-fade 1200ms ease-out both;
+}
