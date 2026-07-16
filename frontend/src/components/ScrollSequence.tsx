@@ -42,6 +42,15 @@ const SCRUB_AMOUNT = 0.5;
  *   - Using a CDN with aggressive caching
  */
 
+/*
+ * IDEAL SOURCE FRAME RESOLUTION:
+ * Keep source images no larger than ~1920px on their longest edge.
+ * Oversized source frames (e.g. 4K originals) drastically increase per-frame
+ * drawImage() cost because the browser must down-scale every time, even when
+ * using pre-decoded ImageBitmaps. Resizing sources offline to ≤1920px keeps
+ * draw times well under a single frame budget at 60 fps.
+ */
+
 /* ═══════════════════════════════════════════════════════════════════════════
  * HELPERS
  * ═══════════════════════════════════════════════════════════════════════════ */
@@ -57,15 +66,18 @@ function frameSrc(index: number): string {
 /**
  * Draws `img` onto `ctx` with "object-fit: cover" behavior:
  * scales + center-crops to fill the canvas without distortion.
+ *
+ * Accepts both HTMLImageElement and ImageBitmap sources. ImageBitmap uses
+ * `.width` / `.height` instead of `.naturalWidth` / `.naturalHeight`.
  */
 function drawCover(
   ctx: CanvasRenderingContext2D,
-  img: HTMLImageElement,
+  img: ImageBitmap | HTMLImageElement,
   cw: number,
   ch: number,
 ) {
-  const iw = img.naturalWidth;
-  const ih = img.naturalHeight;
+  const iw = img instanceof ImageBitmap ? img.width : img.naturalWidth;
+  const ih = img instanceof ImageBitmap ? img.height : img.naturalHeight;
   if (!iw || !ih) return;
 
   const canvasRatio = cw / ch;
@@ -96,53 +108,69 @@ function drawCover(
 export function ScrollSequence() {
   const wrapperRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const framesRef = useRef<(HTMLImageElement | null)[]>([]);
-  const currentFrameRef = useRef(0);
-  const rafIdRef = useRef(0);
+
+  /**
+   * Stores pre-decoded ImageBitmaps. Using createImageBitmap() during preload
+   * moves JPEG/PNG decoding off the main thread and produces GPU-ready
+   * textures, eliminating repeated decode cost on every drawImage() call.
+   */
+  const framesRef = useRef<(ImageBitmap | null)[]>([]);
+
+  /**
+   * targetFrameRef  — written ONLY by ScrollTrigger's onUpdate callback.
+   * lastDrawnRef    — written ONLY by the persistent rAF render loop.
+   *
+   * This decoupling ensures fast/large scrolls simply overwrite targetFrameRef
+   * with the final destination frame; the render loop picks it up on the next
+   * tick and draws exactly once, skipping all intermediate frames.
+   */
+  const targetFrameRef = useRef(0);
+  const lastDrawnRef = useRef(-1); // -1 so the first tick always draws
+
+  /** Handle for the persistent rAF loop, cancelled on unmount. */
+  const loopRafRef = useRef(0);
 
   const [loadProgress, setLoadProgress] = useState(0);
   const [loaded, setLoaded] = useState(false);
 
-  /* ── Preload all frames ───────────────────────────────────────────────── */
+  /* ── Preload all frames as ImageBitmaps ──────────────────────────────── */
   useEffect(() => {
     let cancelled = false;
     let loadedCount = 0;
-    const images: (HTMLImageElement | null)[] = new Array(TOTAL_FRAMES).fill(null);
+    const bitmaps: (ImageBitmap | null)[] = new Array(TOTAL_FRAMES).fill(null);
 
     const promises = Array.from({ length: TOTAL_FRAMES }, (_, i) => {
       const frameNum = FRAME_START + i;
-      return new Promise<void>((resolve) => {
-        const img = new Image();
-        img.src = frameSrc(frameNum);
-        img.onload = () => {
-          images[i] = img;
+      return (async () => {
+        try {
+          const response = await fetch(frameSrc(frameNum));
+          if (!response.ok) throw new Error(`HTTP ${response.status}`);
+          const blob = await response.blob();
+          const bitmap = await createImageBitmap(blob);
+          bitmaps[i] = bitmap;
+        } catch (err) {
+          console.warn(`[ScrollSequence] Failed to load frame ${frameNum}:`, err);
+          bitmaps[i] = null; // skip this frame gracefully
+        } finally {
           loadedCount++;
           if (!cancelled) {
             setLoadProgress(Math.round((loadedCount / TOTAL_FRAMES) * 100));
           }
-          resolve();
-        };
-        img.onerror = () => {
-          console.warn(`[ScrollSequence] Failed to load frame: ${img.src}`);
-          images[i] = null; // skip this frame gracefully
-          loadedCount++;
-          if (!cancelled) {
-            setLoadProgress(Math.round((loadedCount / TOTAL_FRAMES) * 100));
-          }
-          resolve();
-        };
-      });
+        }
+      })();
     });
 
     Promise.all(promises).then(() => {
       if (!cancelled) {
-        framesRef.current = images;
+        framesRef.current = bitmaps;
         setLoaded(true);
       }
     });
 
     return () => {
       cancelled = true;
+      // Close any bitmaps that were created to free GPU memory
+      bitmaps.forEach((b) => b?.close());
     };
   }, []);
 
@@ -160,6 +188,10 @@ export function ScrollSequence() {
     }
   }, []);
 
+  /**
+   * Draws a single frame onto the canvas. Called ONLY from the rAF loop
+   * and from resize handling — never directly from ScrollTrigger's onUpdate.
+   */
   const drawFrame = useCallback(
     (index: number) => {
       const canvas = canvasRef.current;
@@ -175,22 +207,49 @@ export function ScrollSequence() {
 
       // Clamp index
       const clampedIndex = Math.max(0, Math.min(TOTAL_FRAMES - 1, index));
-      const img = framesRef.current[clampedIndex];
-      if (img) {
-        drawCover(ctx, img, cw, ch);
+      const bitmap = framesRef.current[clampedIndex];
+      if (bitmap) {
+        drawCover(ctx, bitmap, cw, ch);
       }
     },
     [],
   );
 
-  /* ── GSAP ScrollTrigger — initialized only after preload ──────────────── */
+  /* ── Persistent rAF render loop ──────────────────────────────────────── */
   useEffect(() => {
     if (!loaded) return;
 
     // Draw first frame immediately
     sizeCanvas();
     drawFrame(0);
-    currentFrameRef.current = 0;
+    targetFrameRef.current = 0;
+    lastDrawnRef.current = 0;
+
+    /**
+     * Persistent render loop: runs every animation frame and draws ONLY when
+     * the target frame has changed since the last draw. Fast scrolls that
+     * update targetFrameRef multiple times between ticks simply cause the
+     * loop to jump straight to the latest frame — no intermediate frames
+     * are rendered.
+     */
+    const tick = () => {
+      const target = targetFrameRef.current;
+      if (target !== lastDrawnRef.current) {
+        drawFrame(target);
+        lastDrawnRef.current = target;
+      }
+      loopRafRef.current = requestAnimationFrame(tick);
+    };
+    loopRafRef.current = requestAnimationFrame(tick);
+
+    return () => {
+      cancelAnimationFrame(loopRafRef.current);
+    };
+  }, [loaded, sizeCanvas, drawFrame]);
+
+  /* ── GSAP ScrollTrigger — initialized only after preload ──────────────── */
+  useEffect(() => {
+    if (!loaded) return;
 
     let scrollTriggerInstance: ScrollTrigger | null = null;
 
@@ -215,13 +274,10 @@ export function ScrollSequence() {
         scrub: SCRUB_AMOUNT,
         anticipatePin: 1,
         onUpdate: (self) => {
+          // ONLY update the target frame — the persistent rAF loop handles drawing.
           const progress = self.progress; // 0 → 1
           const frameIndex = Math.round(progress * (TOTAL_FRAMES - 1));
-          if (frameIndex !== currentFrameRef.current) {
-            currentFrameRef.current = frameIndex;
-            cancelAnimationFrame(rafIdRef.current);
-            rafIdRef.current = requestAnimationFrame(() => drawFrame(frameIndex));
-          }
+          targetFrameRef.current = frameIndex;
         },
       });
 
@@ -231,7 +287,8 @@ export function ScrollSequence() {
         clearTimeout(resizeTimer);
         resizeTimer = setTimeout(() => {
           sizeCanvas();
-          drawFrame(currentFrameRef.current);
+          // Force a redraw at the current target after resize re-scales the canvas
+          lastDrawnRef.current = -1;
           ScrollTrigger.refresh();
         }, 150);
       };
@@ -247,7 +304,6 @@ export function ScrollSequence() {
     init();
 
     return () => {
-      cancelAnimationFrame(rafIdRef.current);
       const wrapper = wrapperRef.current;
       if (wrapper && (wrapper as any).__scrollSequenceCleanup) {
         (wrapper as any).__scrollSequenceCleanup();
@@ -256,7 +312,7 @@ export function ScrollSequence() {
         scrollTriggerInstance.kill();
       }
     };
-  }, [loaded, sizeCanvas, drawFrame]);
+  }, [loaded, sizeCanvas]);
 
   return (
     <div
